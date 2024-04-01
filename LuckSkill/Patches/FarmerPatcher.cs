@@ -77,7 +77,7 @@ namespace LuckSkill.Patches
                 __instance.queueMessage(17, Game1.player, which, howMuch);
                 return false;
             }
-            if (__instance.Level >= 25 + (int)Game1.player.luckLevel / 2) 
+            if (((int)__instance.farmingLevel + (int)__instance.fishingLevel + (int)__instance.foragingLevel + (int)__instance.combatLevel + (int)__instance.miningLevel) / 2 >= 25) 
             {
                 int currentMasteryLevel = MasteryTrackerMenu.getCurrentMasteryLevel();
                 Game1.stats.Increment("MasteryExp", howMuch);
