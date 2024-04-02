@@ -6,7 +6,7 @@
   <PropertyGroup>
     <Version>1.2.6</Version>
     <TargetFramework>net6.0</TargetFramework>
-    <UpdateKeys>GitHub:Nykal145/StardewValleyMods</UpdateKeys>
+    <UpdateKeys>Nexus:521</UpdateKeys>
 
     <EnableHarmony>true</EnableHarmony>
   </PropertyGroup>
