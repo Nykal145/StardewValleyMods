@@ -1,6 +1,8 @@
 ﻿﻿[← back to readme](README.md)
 
 # Release notes
+## 1.2.6
+Update for 1.6, changeover to new maintainer (Nykal145) Bug Fixes for 1.6 from the unofficial versions
 ## 1.2.3
 Released 12 January 2022 for SMAPI 3.13.0 or later. Updated by Pathoschild.
 
