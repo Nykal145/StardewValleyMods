@@ -19,6 +19,7 @@ using SpaceShared.APIs;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
+using StardewValley.BellsAndWhistles;
 using StardewValley.Buildings;
 using StardewValley.Characters;
 using StardewValley.Locations;
@@ -41,7 +42,7 @@ namespace JsonAssets
         private static Regex NameFixer = new("[^a-zA-Z0-9_]", RegexOptions.Compiled);
         public static string FixIdJA(this string before)
         {
-            return NameFixer.Replace(before, "_");
+            return NameFixer.Replace(before.Trim(), "_");
         }
     }
 
@@ -72,6 +73,7 @@ namespace JsonAssets
         private readonly Dictionary<string, IManifest> DupShirts = new();
         private readonly Dictionary<string, IManifest> DupPants = new();
         private readonly Dictionary<string, IManifest> DupBoots = new();
+        private Dictionary<string, string> FruitTreeSaplings = new();
         private readonly Regex SeasonLimiter = new("(z(?: spring| summer| fall| winter){2,4})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>The mod entry point, called after the mod is first loaded.</summary>
@@ -84,6 +86,7 @@ namespace JsonAssets
             helper.Events.Display.MenuChanged += this.OnMenuChanged;
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
             helper.Events.GameLoop.UpdateTicked += this.OnTick;
+            helper.Events.GameLoop.ReturnedToTitle += this.GameLoop_ReturnedToTitle;
             helper.Events.Specialized.LoadStageChanged += this.OnLoadStageChanged;
             helper.Events.Multiplayer.PeerContextReceived += this.ClientConnected;
 
@@ -95,6 +98,11 @@ namespace JsonAssets
                 new HoeDirtPatcher(),
                 new ShopMenuPatcher()
             );
+        }
+
+        private void GameLoop_ReturnedToTitle(object sender, ReturnedToTitleEventArgs e)
+        {
+            DidInit = false;
         }
 
         private Api Api;
@@ -216,7 +224,7 @@ namespace JsonAssets
                     PurchaseFrom = obj.Recipe.PurchaseFrom,
                     Price = obj.Recipe.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, obj.Recipe.PurchaseRequirements),
-                    Object = () => new SObject(obj.Name, 1, true, obj.Recipe.PurchasePrice)
+                    Object = () => new SObject(obj.Name.FixIdJA(), 1, true, obj.Recipe.PurchasePrice)
                 });
 
                 foreach (var entry in obj.Recipe.AdditionalPurchaseData)
@@ -226,7 +234,7 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new SObject(obj.Name, 1, true, entry.PurchasePrice)
+                        Object = () => new SObject(obj.Name.FixIdJA(), 1, true, entry.PurchasePrice)
                     });
                 }
             }
@@ -239,7 +247,7 @@ namespace JsonAssets
                     PurchaseFrom = obj.PurchaseFrom,
                     Price = obj.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, obj.PurchaseRequirements),
-                    Object = () => new SObject(obj.Name, int.MaxValue, false, obj.Price)
+                    Object = () => new SObject(obj.Name.FixIdJA(), int.MaxValue, false, obj.Price)
                 });
                 foreach (var entry in obj.AdditionalPurchaseData)
                 {
@@ -248,24 +256,24 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new SObject(obj.Name, int.MaxValue, false, obj.Price)
+                        Object = () => new SObject(obj.Name.FixIdJA(), int.MaxValue, false, obj.Price)
                     });
                 }
             }
 
             // check for duplicates
-            if (this.DupObjects.TryGetValue(obj.Name, out IManifest prevManifest))
+            if (this.DupObjects.TryGetValue(obj.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate object: {obj.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate object: {obj.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupObjects[obj.Name] = source;
+                this.DupObjects[obj.Name.FixIdJA()] = source;
 
             // track added
             if (!this.ObjectsByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.ObjectsByContentPack[source] = new();
-            addedNames.Add(obj.Name);
+            addedNames.Add(obj.Name.FixIdJA());
         }
 
         /// <summary>Register a custom crop with Json Assets.</summary>
@@ -307,7 +315,7 @@ namespace JsonAssets
             // validate
             if (!this.AssertHasName(crop, "crop", source, translations))
                 return;
-            if (!this.AssertHasName(crop.Seed, "crop seed", source, translations, discriminator: $"crop: {crop.Name}", fieldName: nameof(crop.SeedName)))
+            if (!this.AssertHasName(crop.Seed, "crop seed", source, translations, discriminator: $"crop: {crop.Name.FixIdJA()}", fieldName: nameof(crop.SeedName)))
                 return;
 
             // save crop data
@@ -353,7 +361,7 @@ namespace JsonAssets
                     PurchaseFrom = crop.Seed.PurchaseFrom,
                     Price = crop.Seed.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, crop.Seed.PurchaseRequirements),
-                    Object = () => new SObject(crop.Seed.Name, int.MaxValue, false, crop.Seed.Price),
+                    Object = () => new SObject(crop.Seed.Name.FixIdJA(), int.MaxValue, false, crop.Seed.Price),
                     ShowWithStocklist = true
                 });
                 foreach (var entry in crop.Seed.AdditionalPurchaseData)
@@ -363,19 +371,28 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new SObject(crop.Seed.Name, int.MaxValue, false, crop.Seed.Price)
+                        Object = () => new SObject(crop.Seed.Name.FixIdJA(), int.MaxValue, false, crop.Seed.Price)
                     });
                 }
             }
 
             // check for duplicates
-            if (this.DupCrops.TryGetValue(crop.Name, out IManifest prevManifest))
+            if (this.DupCrops.TryGetValue(crop.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate crop: {crop.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate crop: {crop.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupCrops[crop.Name] = source;
+                this.DupCrops[crop.Name.FixIdJA()] = source;
+
+            // check for duplicates
+            if (this.DupObjects.TryGetValue(crop.Seed.Name.FixIdJA(), out IManifest prevManifest2))
+            {
+                Log.Error($"Duplicate object: {crop.Seed.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest2.Name}!");
+                return;
+            }
+            else
+                this.DupObjects[crop.Seed.Name.FixIdJA()] = source;
 
             // save seed data
             this.Objects.Add(crop.Seed);
@@ -428,12 +445,13 @@ namespace JsonAssets
             // validate
             if (!this.AssertHasName(tree, "fruit tree", source, translations))
                 return;
-            if (!this.AssertHasName(tree.Sapling, "fruit tree sapling", source, translations, discriminator: $"fruit tree: {tree.Name}", fieldName: nameof(tree.SaplingName)))
+            if (!this.AssertHasName(tree.Sapling, "fruit tree sapling", source, translations, discriminator: $"fruit tree: {tree.Name.FixIdJA()}", fieldName: nameof(tree.SaplingName)))
                 return;
 
             // save data
             this.FruitTrees.Add(tree);
             this.Objects.Add(tree.Sapling);
+            this.FruitTreeSaplings.Add(tree.Name.FixIdJA(), tree.SaplingName.FixIdJA());
 
             // add sapling to shops
             if (tree.Sapling.CanPurchase)
@@ -443,7 +461,7 @@ namespace JsonAssets
                     PurchaseFrom = tree.Sapling.PurchaseFrom,
                     Price = tree.Sapling.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, tree.Sapling.PurchaseRequirements),
-                    Object = () => new SObject(tree.Sapling.Name, int.MaxValue)
+                    Object = () => new SObject(tree.Sapling.Name.FixIdJA(), int.MaxValue)
                 });
                 foreach (var entry in tree.Sapling.AdditionalPurchaseData)
                 {
@@ -452,19 +470,28 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new SObject(tree.Sapling.Name, int.MaxValue)
+                        Object = () => new SObject(tree.Sapling.Name.FixIdJA(), int.MaxValue)
                     });
                 }
             }
 
             // check for duplicates
-            if (this.DupFruitTrees.TryGetValue(tree.Name, out IManifest prevManifest))
+            if (this.DupFruitTrees.TryGetValue(tree.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate fruit tree: {tree.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate fruit tree: {tree.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupFruitTrees[tree.Name] = source;
+                this.DupFruitTrees[tree.Name.FixIdJA()] = source;
+
+            // check for duplicates
+            if (this.DupObjects.TryGetValue(tree.Sapling.Name.FixIdJA(), out IManifest prevManifest2))
+            {
+                Log.Error($"Duplicate object: {tree.Sapling.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest2.Name}!");
+                return;
+            }
+            else
+                this.DupObjects[tree.Sapling.Name.FixIdJA()] = source;
 
             if (!this.FruitTreesByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.FruitTreesByContentPack[source] = new List<string>();
@@ -504,7 +531,7 @@ namespace JsonAssets
                     PurchaseFrom = craftable.Recipe.PurchaseFrom,
                     Price = craftable.Recipe.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, craftable.Recipe.PurchaseRequirements),
-                    Object = () => new SObject(Vector2.Zero, craftable.Name, true)
+                    Object = () => new SObject(Vector2.Zero, craftable.Name.FixIdJA(), true)
                 });
                 foreach (var entry in craftable.Recipe.AdditionalPurchaseData)
                 {
@@ -513,7 +540,7 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new SObject(Vector2.Zero, craftable.Name, true)
+                        Object = () => new SObject(Vector2.Zero, craftable.Name.FixIdJA(), true)
                     });
                 }
             }
@@ -526,7 +553,7 @@ namespace JsonAssets
                     PurchaseFrom = craftable.PurchaseFrom,
                     Price = craftable.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, craftable.PurchaseRequirements),
-                    Object = () => new SObject(Vector2.Zero, craftable.Name)
+                    Object = () => new SObject(Vector2.Zero, craftable.Name.FixIdJA())
                 });
                 foreach (var entry in craftable.AdditionalPurchaseData)
                 {
@@ -535,23 +562,23 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new SObject(Vector2.Zero, craftable.Name)
+                        Object = () => new SObject(Vector2.Zero, craftable.Name.FixIdJA())
                     });
                 }
             }
 
             // check for duplicates
-            if (this.DupBigCraftables.TryGetValue(craftable.Name, out IManifest prevManifest))
+            if (this.DupBigCraftables.TryGetValue(craftable.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate big craftable: {craftable.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate big craftable: {craftable.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupBigCraftables[craftable.Name] = source;
+                this.DupBigCraftables[craftable.Name.FixIdJA()] = source;
 
             if (!this.BigCraftablesByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.BigCraftablesByContentPack[source] = new();
-            addedNames.Add(craftable.Name);
+            addedNames.Add(craftable.Name.FixIdJA());
         }
 
         /// <summary>Register a custom hat with Json Assets.</summary>
@@ -592,17 +619,17 @@ namespace JsonAssets
             }
 
             // check for duplicates
-            if (this.DupHats.TryGetValue(hat.Name, out IManifest prevManifest))
+            if (this.DupHats.TryGetValue(hat.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate hat: {hat.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate hat: {hat.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupHats[hat.Name] = source;
+                this.DupHats[hat.Name.FixIdJA()] = source;
 
             if (!this.HatsByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.HatsByContentPack[source] = new();
-            addedNames.Add(hat.Name);
+            addedNames.Add(hat.Name.FixIdJA());
         }
 
         /// <summary>Register a custom weapon with Json Assets.</summary>
@@ -638,7 +665,7 @@ namespace JsonAssets
                     PurchaseFrom = weapon.PurchaseFrom,
                     Price = weapon.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, weapon.PurchaseRequirements),
-                    Object = () => new MeleeWeapon(weapon.Name)
+                    Object = () => new MeleeWeapon(weapon.Name.FixIdJA())
                 });
                 foreach (var entry in weapon.AdditionalPurchaseData)
                 {
@@ -647,23 +674,23 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new MeleeWeapon(weapon.Name)
+                        Object = () => new MeleeWeapon(weapon.Name.FixIdJA())
                     });
                 }
             }
 
             // check for duplicates
-            if (this.DupWeapons.TryGetValue(weapon.Name, out IManifest prevManifest))
+            if (this.DupWeapons.TryGetValue(weapon.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate weapon: {weapon.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate weapon: {weapon.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupWeapons[weapon.Name] = source;
+                this.DupWeapons[weapon.Name.FixIdJA()] = source;
 
             if (!this.WeaponsByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.WeaponsByContentPack[source] = new();
-            addedNames.Add(weapon.Name);
+            addedNames.Add(weapon.Name.FixIdJA());
         }
 
         /// <summary>Register a custom shirt with Json Assets.</summary>
@@ -692,17 +719,17 @@ namespace JsonAssets
             this.Shirts.Add(shirt);
 
             // check for duplicates
-            if (this.DupShirts.TryGetValue(shirt.Name, out IManifest prevManifest))
+            if (this.DupShirts.TryGetValue(shirt.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate shirt: {shirt.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate shirt: {shirt.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupShirts[shirt.Name] = source;
+                this.DupShirts[shirt.Name.FixIdJA()] = source;
 
             if (!this.ClothingByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.ClothingByContentPack[source] = new();
-            addedNames.Add(shirt.Name);
+            addedNames.Add(shirt.Name.FixIdJA());
         }
 
         /// <summary>Register custom pants with Json Assets.</summary>
@@ -731,17 +758,17 @@ namespace JsonAssets
             this.Pants.Add(pants);
 
             // check for duplicates
-            if (this.DupPants.TryGetValue(pants.Name, out IManifest prevManifest))
+            if (this.DupPants.TryGetValue(pants.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate pants: {pants.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate pants: {pants.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupPants[pants.Name] = source;
+                this.DupPants[pants.Name.FixIdJA()] = source;
 
             if (!this.ClothingByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.ClothingByContentPack[source] = new();
-            addedNames.Add(pants.Name);
+            addedNames.Add(pants.Name.FixIdJA());
         }
 
         /// <summary>Register a custom tailoring recipe with Json Assets.</summary>
@@ -787,7 +814,7 @@ namespace JsonAssets
                     PurchaseFrom = boots.PurchaseFrom,
                     Price = boots.PurchasePrice,
                     PurchaseRequirements = this.ParseAndValidateRequirements(source, boots.PurchaseRequirements),
-                    Object = () => new Boots(boots.Name)
+                    Object = () => new Boots(boots.Name.FixIdJA())
                 });
 
                 foreach (var entry in boots.AdditionalPurchaseData)
@@ -797,23 +824,23 @@ namespace JsonAssets
                         PurchaseFrom = entry.PurchaseFrom,
                         Price = entry.PurchasePrice,
                         PurchaseRequirements = this.ParseAndValidateRequirements(source, entry.PurchaseRequirements),
-                        Object = () => new Boots(boots.Name)
+                        Object = () => new Boots(boots.Name.FixIdJA())
                     });
                 }
             }
 
             // check for duplicates
-            if (this.DupBoots.TryGetValue(boots.Name, out IManifest prevManifest))
+            if (this.DupBoots.TryGetValue(boots.Name.FixIdJA(), out IManifest prevManifest))
             {
-                Log.Error($"Duplicate boots: {boots.Name} just added by {source.Name}, already added by {prevManifest.Name}!");
+                Log.Error($"Duplicate boots: {boots.Name.FixIdJA()} just added by {source.Name}, already added by {prevManifest.Name}!");
                 return;
             }
             else
-                this.DupBoots[boots.Name] = source;
+                this.DupBoots[boots.Name.FixIdJA()] = source;
 
             if (!this.BootsByContentPack.TryGetValue(source, out List<string> addedNames))
                 addedNames = this.BootsByContentPack[source] = new();
-            addedNames.Add(boots.Name);
+            addedNames.Add(boots.Name.FixIdJA());
         }
 
         /// <summary>Register a custom forge recipe with Json Assets.</summary>
@@ -846,7 +873,7 @@ namespace JsonAssets
             fence.CorrespondingObject = new ObjectData
             {
                 Texture = fence.ObjectTexture,
-                Name = fence.Name,
+                Name = fence.Name.FixIdJA(),
                 Description = fence.Description,
                 Category = ObjectCategory.Crafting,
                 Price = fence.Price,
@@ -1361,6 +1388,7 @@ namespace JsonAssets
                     }
                     if (item is SObject { IsRecipe: true } obj2 && Game1.player.knowsRecipe(obj2.Name))
                         continue;
+                    item.Stack = 1;
                     forSale.Add(item);
 
                     bool isRecipe = (item as SObject)?.IsRecipe == true;
@@ -1368,8 +1396,8 @@ namespace JsonAssets
                         ? new[] { 0, isRecipe ? 1 : int.MaxValue, 858, price }
                         : new[] { price, isRecipe ? 1 : int.MaxValue };
                     var isi = isQiGemShop
-                        ? new ItemStockInformation(0, isRecipe ? 1 : int.MaxValue, "858", price)
-                        : new ItemStockInformation(price, isRecipe ? 1 : int.MaxValue);
+                        ? new ItemStockInformation(0, isRecipe ? 1 : int.MaxValue, "858", price, stackDrawType: StackDrawType.HideButShowQuality)
+                        : new ItemStockInformation(price, isRecipe ? 1 : int.MaxValue, stackDrawType: StackDrawType.HideButShowQuality);
                     itemPriceAndStock.Add(item, isi);
                 }
 
@@ -1423,7 +1451,7 @@ namespace JsonAssets
                         : new Dictionary<TKey, TValue>();
                 }
                 Directory.CreateDirectory(Path.Combine(Constants.CurrentSavePath, "JsonAssets"));
-                this.OldObjectIds = (LoadDictionary<string, int>("ids-objects.json") ?? new Dictionary<string, int>()).ToDictionary( x => x.Value.ToString(), x => x.Key );
+                this.OldObjectIds = (LoadDictionary<string, int>("ids-objects.json") ?? new Dictionary<string, int>()).ToDictionary(x => x.Value.ToString(), x => x.Key);
                 this.OldCropIds = (LoadDictionary<string, int>("ids-crops.json") ?? new Dictionary<string, int>()).ToDictionary(x => x.Value.ToString(), x => x.Key);
                 this.OldFruitTreeIds = (LoadDictionary<string, int>("ids-fruittrees.json") ?? new Dictionary<string, int>()).ToDictionary(x => x.Value.ToString(), x => x.Key);
                 this.OldBigCraftableIds = (LoadDictionary<string, int>("ids-big-craftables.json") ?? new Dictionary<string, int>()).ToDictionary(x => x.Value.ToString(), x => x.Key);
@@ -1459,49 +1487,49 @@ namespace JsonAssets
                 var objs = LoadDictionary<string, int>("ids-objects.json");
                 foreach (string key in objs.Keys)
                 {
-                    if (!DupObjects.ContainsKey(key))
+                    if (!DupObjects.ContainsKey(key.FixIdJA()))
                         OldObjectIds.Remove(objs[key].ToString());
                 }
                 var crops = LoadDictionary<string, int>("ids-crops.json");
                 foreach (string key in crops.Keys)
                 {
-                    if (!DupCrops.ContainsKey(key))
+                    if (!DupCrops.ContainsKey(key.FixIdJA()))
                         OldCropIds.Remove(crops[key].ToString());
                 }
                 var ftrees = LoadDictionary<string, int>("ids-fruittrees.json");
                 foreach (string key in ftrees.Keys)
                 {
-                    if (!DupFruitTrees.ContainsKey(key))
+                    if (!DupFruitTrees.ContainsKey(key.FixIdJA()))
                         OldFruitTreeIds.Remove(ftrees[key].ToString());
                 }
                 var bigs = LoadDictionary<string, int>("ids-big-craftables.json");
                 foreach (string key in bigs.Keys)
                 {
-                    if (!DupBigCraftables.ContainsKey(key))
+                    if (!DupBigCraftables.ContainsKey(key.FixIdJA()))
                         OldBigCraftableIds.Remove(bigs[key].ToString());
                 }
                 var hats = LoadDictionary<string, int>("ids-hats.json");
                 foreach (string key in hats.Keys)
                 {
-                    if (!DupHats.ContainsKey(key))
+                    if (!DupHats.ContainsKey(key.FixIdJA()))
                         OldHatIds.Remove(hats[key].ToString());
                 }
                 var weapons = LoadDictionary<string, int>("ids-weapons.json");
                 foreach (string key in weapons.Keys)
                 {
-                    if (!DupWeapons.ContainsKey(key))
+                    if (!DupWeapons.ContainsKey(key.FixIdJA()))
                         OldWeaponIds.Remove(weapons[key].ToString());
                 }
                 var clothing = LoadDictionary<string, int>("ids-clothing.json");
                 foreach (string key in clothing.Keys)
                 {
-                    if (!DupShirts.ContainsKey(key) && !DupPants.ContainsKey(key))
+                    if (!DupShirts.ContainsKey(key.FixIdJA()) && !DupPants.ContainsKey(key.FixIdJA()))
                         OldClothingIds.Remove(clothing[key].ToString());
                 }
                 var boots = LoadDictionary<string, int>("ids-boots.json");
                 foreach (string key in boots.Keys)
                 {
-                    if (!DupBoots.ContainsKey(key))
+                    if (!DupBoots.ContainsKey(key.FixIdJA()))
                         OldBootsIds.Remove(boots[key].ToString());
                 }
             }
@@ -1589,7 +1617,7 @@ namespace JsonAssets
         {
             Utility.ForEachItem(i => { FixItem(i); return true; });
             SpaceUtility.iterateAllTerrainFeatures(this.FixTerrainFeature);
-            foreach ( var loc in Game1.locations )
+            foreach (var loc in Game1.locations)
             {
                 foreach (var building in loc.buildings)
                     FixBuilding(building);
@@ -1600,6 +1628,8 @@ namespace JsonAssets
             this.FixIdDict(Game1.player.recipesCooked);
             this.FixIdDict2(Game1.player.archaeologyFound);
             this.FixIdDict2(Game1.player.fishCaught);
+            this.FixRecipeDict(Game1.player.craftingRecipes);
+            this.FixRecipeDict(Game1.player.cookingRecipes);
 
             // Fix this if anyone complains it isn't working
             /*
@@ -1813,7 +1843,7 @@ namespace JsonAssets
             switch (building)
             {
                 default:
-                    foreach ( var chest in building.buildingChests.ToList() )
+                    foreach (var chest in building.buildingChests.ToList())
                         this.FixItemList(chest.Items);
                     break;
 
@@ -1877,9 +1907,39 @@ namespace JsonAssets
 
                 case FruitTree ftree:
                     {
-                        if (this.OldFruitTreeIds.ContainsKey(ftree.treeId.Value))
+                        try
                         {
-                            ftree.treeId.Value = this.OldFruitTreeIds[ftree.treeId.Value].FixIdJA();
+                            // Migrate the fruit trees from old to new data types if they're one of ours
+                            if (ftree.obsolete_treeType != null && this.OldFruitTreeIds.ContainsKey(ftree.obsolete_treeType))
+                            {
+                                ftree.treeId.Value = ftree.obsolete_treeType;
+                                ftree.obsolete_treeType = null;
+                            }
+                            // Now migrate them from int to string IDs
+                            Log.Info($"Fruit tree ID: {ftree.treeId.Value}");
+                            if (ftree.treeId.Value != null)
+                            {
+                                // Look up the proper tree name
+                                this.OldFruitTreeIds.TryGetValue(ftree.treeId.Value, out string val);
+                                Log.Info($"Best guess: {val}");
+                                if (val != null)
+                                {
+                                    // Translate the proper tree name to sapling name and set as tree ID
+                                    ftree.treeId.Value = FruitTreeSaplings[val.FixIdJA()];
+                                    // Fix the fruits on the tree
+                                    if (ftree.obsolete_fruitsOnTree != null)
+                                    {
+                                        for (int i = 0; i < ftree.obsolete_fruitsOnTree; i++)
+                                            ftree.TryAddFruit();
+                                        ftree.obsolete_fruitsOnTree = null;
+                                    }
+                                }
+                            }
+                            
+                        }
+                        catch (Exception e)
+                        {
+                            Log.Error($"Error migrating fruit tree: {e}");
                         }
                     }
                     break;
@@ -1924,7 +1984,7 @@ namespace JsonAssets
                 if (this.OldObjectIds.ContainsKey(entry))
                 {
                     toRemove.Add(entry);
-                    toAdd.Add(this.OldObjectIds[entry].FixIdJA(), dict[entry]);
+                    toAdd.TryAdd(this.OldObjectIds[entry].FixIdJA(), dict[entry]);
                 }
             }
             foreach (string entry in toRemove)
@@ -1953,13 +2013,47 @@ namespace JsonAssets
                 if (this.OldObjectIds.ContainsKey(entry))
                 {
                     toRemove.Add(entry);
-                    toAdd.Add(this.OldObjectIds[entry].FixIdJA(), dict[entry]);
+                    toAdd.TryAdd(this.OldObjectIds[entry].FixIdJA(), dict[entry]);
                 }
             }
             foreach (string entry in toRemove)
                 dict.Remove(entry);
             foreach (var entry in toAdd)
                 dict.Add(entry.Key, entry.Value);
+        }
+
+        private void FixRecipeDict(NetStringDictionary<int, NetInt> dict, bool removeUnshippable = false)
+        {
+            var toRemove = new List<string>();
+            var toAdd = new Dictionary<string, int>();
+            foreach (string entry in dict.Keys)
+            {
+                if (this.OldObjectIds.ContainsValue(entry))
+                {
+                    toRemove.Add(entry);
+                    toAdd.TryAdd(entry.FixIdJA(), dict[entry]);
+                }
+                else if (this.OldBigCraftableIds.ContainsValue(entry))
+                {
+                    toRemove.Add(entry);
+                    toAdd.TryAdd(entry.FixIdJA(), dict[entry]);
+                }
+            }
+            foreach (string entry in toRemove)
+                dict.Remove(entry);
+            foreach (var entry in toAdd)
+            {
+                if (dict.ContainsKey(entry.Key))
+                {
+                    Log.Error("Dict already has value for " + entry.Key + "!");
+                    foreach (var obj in this.Objects)
+                    {
+                        if (obj.Name.FixIdJA() == entry.Key)
+                            Log.Error("\tobj = " + obj.Name);
+                    }
+                }
+                dict.Add(entry.Key, entry.Value);
+            }
         }
     }
 }
